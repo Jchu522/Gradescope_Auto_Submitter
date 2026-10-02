@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+# Release: NA
+
+"""gradescope-score: upload numeric scores for a Gradescope question.
+Depends on the `requests` python library for http communications."""
+
+__version__ = "0.0.1"
+
+import sys                      # argv etc
+import os                       # for getcwd()
+import re                       # regexs
+import getpass                  # read a password from stdin
+import argparse                 # command args
+import zipfile                  # for handling zip files
+import time                     # for sleep()
+import csv                      # for the csv.reader functionality
+import json
+
+import requests                 # 3rd party lib for http communications
+
+# main url for gradescope; the www is important
+GRADESCOPE_URL="https://www.gradescope.com"
+
+def get_credentials():
+  if 'GRADESCOPE_EMAIL' in os.environ and 'GRADESCOPE_PASSWORD' in os.environ:
+    email = os.environ['GRADESCOPE_EMAIL']
+    password = os.environ['GRADESCOPE_PASSWORD']
+    return ("user/pass",(email,password))
+  elif 'GRADESCOPE_EMAIL' in os.environ:
+    email = os.environ['GRADESCOPE_EMAIL']
+    print("==Gradscope Login Credentials==")
+    print(f"email: {email}")
+    password = getpass.getpass("password: ")
+    return ("user/pass",(email,password))
+  else:
+    print("==Gradscope Login Credentials==")
+    email = input('email: ')
+    password = getpass.getpass("password: ")
+    return ("user/pass",(email,password))
+
+def submit_scores(scores_file, email, password):
+  print("\nContacting Gradescope")
+  session = requests.Session()  # maintains cookies, does redirects
+  
+  url = GRADESCOPE_URL
+  response = session.get(url)
+  print(f"- {url} {response.reason} ({response.status_code})")
+  response.raise_for_status()
+  
+  # extract token from the html on the main page
+  login_auth_token = \
+    re.search(r'action="/login".*?authenticity_token" value="([^"]*)"', \
+              response.text)[1]
+  
+  # data required on the login page
+  login_data = [
+    ("utf8", "✓"),
+    ("session[email]", email),
+    ("session[password]", password),
+    ("session[remember_me]", 0),
+    ("commit", "Log+In"),
+    ("session[remember_me_sso]", 0),
+    ("authenticity_token", login_auth_token),
+  ]
+  
+  # perform the login request which will store cookies for the session
+  url = f"{GRADESCOPE_URL}/login"
+  response = session.post(url,login_data)
+  print(f"- {url} {response.reason} ({response.status_code})")
+  response.raise_for_status()
+  if not 'signed_token' in session.cookies.keys():
+    print(f"""
+LOGIN ERROR for {email}:
+Check password and try again. Your Gradescope password may not be the
+same as you school password. Reset Gradescope passwords at:
+  {GRADESCOPE_URL}/reset_password""")
+    return False
+  
+  # keys for various lookups; NOTE: the 'Question Submission ID' is
+  # different from the main submission ID; both appear in the CSV's
+  # exported from Gradescope via "Export Evaluations"
+  score_key='Score'
+  comments_key='Comments' 
+  course_id_key='Course ID'
+  zero_rubric_id_key='Zero Rubric ID'
+  question_id_key='Question ID'
+  submission_id_key='Question Submission ID' 
+
+  # must notify that json is being sent as the payload AND pass a
+  # valid authentication token (CSRF Token) in the header
+  headers = {
+    'Accept': 'application/json, text/javascript',
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': 0,
+  }
+
+  print('Uploading Scores')
+  with open(scores_file, newline='') as csvfile:
+    for (idx,row) in enumerate(csv.DictReader(csvfile)):
+      # extract data from the CSV file row
+      course_id      = row[course_id_key]
+      question_id    = row[question_id_key]
+      zero_rubric_id = row[zero_rubric_id_key]
+      submission_id  = row[submission_id_key]
+      score          = row[score_key]
+      comments       = row.get(comments_key,"")
+
+      # get authenticity token for each question, seems to be ncessary
+      # when scripting whereas an interactive web session will
+      # maintain the same token as one clicks around
+      url = f"{GRADESCOPE_URL}/courses/{course_id}/questions/{question_id}/submissions/{submission_id}/grade"
+      response = session.get(url)
+      auth_token = re.search(r'meta name="csrf-token" content="([^"]*)"', response.text)[1]
+      headers['X-CSRF-Token'] = auth_token
+
+      # save grade
+      url = f"{GRADESCOPE_URL}/courses/{course_id}/questions/{question_id}/submissions/{submission_id}/save_grade"
+      submit_data = {"question_submission_evaluation":{"points": f"{score}","comments": comments}}
+      if float(score)==0.0:
+        submit_data['rubric_items'] = {f"{zero_rubric_id}":{"score":"true"}}
+      submit_str  = json.dumps(submit_data)
+      response = session.post(url, data=submit_str, headers=headers)
+      print(f'[{idx:3}] {course_id} {question_id} {submission_id} = {score} : {response.reason} ({response.status_code})')
+      # response.raise_for_status()
+  
+  return True
+
+SHORT_DESCRIPTION = """\
+"""
+
+LONG_DESCRIPTION = """\
+"""
+
+def main():
+  argparser = argparse.ArgumentParser(description=SHORT_DESCRIPTION,
+                                      epilog=LONG_DESCRIPTION,
+                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+  
+  argparser.add_argument("-n","--no-autograder",dest='autograder_wait',action='store_false',
+                         help="Disable waiting for the autograder to finish and show its results")
+  # argparser.add_argument("question_id",metavar="question_id",
+  #                        help="Numeric ID of the Question to which scores will be added in Gradescope")
+  argparser.add_argument("scores_file",metavar="scores.csv",
+                         help="CSV file which has SubmissionID and Score as first two columns")
+
+  args = argparser.parse_args()
+
+  (cred_kind,(email,password)) = get_credentials()
+    
+  ret = submit_scores(args.scores_file, email, password)
+
+  if ret:
+    sys.exit(0)
+  else:
+    sys.exit(2)
+
+if __name__ == '__main__':
+  main()

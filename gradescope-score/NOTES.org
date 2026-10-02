@@ -1,0 +1,268 @@
+* gradescope-score: upload numeric scores to Gradescope
+** usage
+: gradescope-score scores.csv
+The CSV file must have the following columns in any order
+- Score :: numeric score for the "Submission Specific Adjustments"
+  field
+- Course ID :: course identifier, find in the URL for the course
+- Question ID :: question identifier, find in the URL of of a grading
+  link
+- Zero Rubric ID :: rubric identifier for zero score submissions,
+  find in the export of evaluations
+- Question Submission ID :: identifier for studnet answer to question;
+  distinct from the submission ID
+
+The easiest way to set this up is:
+1. Generate the Scores through whatever external means is desired,
+   store in a plain text column ordered according to submission number
+3. Open one submission and add a rubric item that is designated as the
+   0 score item (needed as if no rubric items are marked and a 0
+   adjustment score is given, then the submission is ungraded). Open
+   the Web Browser Dev Tools, then check the item to generate traffic;
+   copy the CURL version of this to the rubric ID (or inspect it)
+2. Navigate to the "Review Grades" section on Gradescope for the
+   assignmnet
+3. From the lower portion select "Export Evaluations" to get a zip of
+   all evals
+4. Unzip this which will create a directory with a CSV for each of the
+   Questions for the assignment and *importantly has Question
+   Submission IDs* for all student answers; this spreadsheet already
+   has a ~Score~ column 
+5. On Gradescope navigate to one student's question and obtain the
+   ~Course ID~ and ~Question ID~ from the URL
+6. Paste the ~Course ID, Question ID, Zero Rubric ID, and Score~ into
+   the CSV / spreadsheet, save as a CSV
+7. Run ~gradescope-score~ on that spreadsheet which will update all
+   assignments with the scores
+
+** Sample URL
+#+BEGIN_SRC text
+https://www.gradescope.com/...
+.../courses/1239298/questions/70136765/submissions/3958352517/grade
+            |                 |                    | 
+            |                 |                    +>Question Submission ID 
+            |                 +>Question ID                                
+            +>Course ID                     
+#+END_SRC
+
+** Sample Run
+#+BEGIN_SRC sh
+>> gradescope-score scores.csv
+
+Contacting Gradescope
+- https://www.gradescope.com OK (200)
+- https://www.gradescope.com/login OK (200)
+Uploading Scores
+[  0] 1239298 70136765 3921762816 = 40 : OK (200)
+[  1] 1239298 70136765 3925115803 = 35 : OK (200)
+[  2] 1239298 70136765 3927151261 = 45 : OK (200)
+...
+#+END_SRC
+
+
+* Dealing with Zero Scores
+- If a submission has a 0 adjustment and no rubric items marked, it is
+  marked as ungraded
+- Need to add in a zero rubric item on Gradescope then check that for
+  zero scores
+- Added in some code to do this, a minor annoyance but not much way
+  around it
+- Need to use the DevTools to see the network traffic for the ID of
+  the rubric item; possible that might be able to see it in the HTML
+  of a loaded page as well but copying the curl output for checking
+  the item gives everything needed
+- In a future release, consider trying to discover a 0 rubric item in
+  the existing rubric
+
+** Sample Zero Rubric Item curl invocation
+#+BEGIN_SRC sh
+curl 'https://www.gradescope.com/courses/1239298/questions/71735956/submissions/3993881447/save_grade' \
+  -H 'accept: application/json, text/javascript, */*; q=0.01' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'cache-control: no-cache' \
+  -H 'content-type: application/json' \
+  -b 'signed_token=TklNWnRDNjgyN3pRYUpJckRzeTk4RStUTGRGOGhTK2tldXlMR2V1d1NMUT0tLWxoclNRNEVESUVHdGFEWUhTK2JUVWc9PQ%3D%3D--9ae5fb4c75003c3b3d9303914d41c610f1360ce9; remember_me=c0Z5Y0pTbUpFT2t6bmw3VXdmOWlkZz09LS1ZT0hEdG45dDBXRUZ3cWZGblM1VzZRPT0%3D--18fa40386b1d60a532c78e6de39c7450353d5fd7; apt.sid=AP-1BQVLBSZC216-2-1779068978901-99242569; apt.uid=AP-1BQVLBSZC216-2-1779068978903-99111735.0.2.5b370ea1-e511-4b00-a943-15ae65859f86; _gradescope_session=TkRCaE5kNTZhcndtY2lnR3Rzai9FVkprWDI3SVl2ejZpYzZkUmIyQWMva1BjWnVEdnlEVUY1WDR3Z0k4eGtPRWRzeUQydTBBVVJ4QXgyaEVkaG1oWTJTRk5EQSsxSnd0TDBHaGZKc3lEZjRQLzNkNjVIUzlZTFNRb21uYnpta3dyejZKN2pjek1pMUxINUlDbkY5am1oUXJ0WUtlTWhmcTh0M0xVT0FBSFphRjFJNmpDZU42Y3FFMXB6UjdqRlBmWW9yZHR0cnFDaVFyZnVYRVlXRTFNaDJ4WFdsVGp2Z0FScnVGSDY4cGlKblBzYWZWUU1TeHdLd201L0dQSFNjRFZLZkQ0WTNsWlNzeWJkelhqN0x6bDdtaCtZYW9LKzcxTko2bVp2Q2tDUkx3QThGeTNXM1o1cE4waU1ybi95Ym8rU0xObUpxbmlCNmZSdU8zQ0FOV09aNW1SWEd6eVI3K0FlZVdTK0kxazJLQWlxZ3haNi93UWp4QnkwMTI4S2hQOFJnKy9ZbWtickRMYzQrN3FQUVE5VFJUY0VwZnhybXFQVVJob2lBaE9PcmMvaW8yVmpQeVVMcW1GdWxTc0ppMDZvQkZyWTZaM09Jd3F0TWxacnpwWGVlWXdtRUZnMS9kZTY3OWFNWXV3ZFNTTitRa0dDUmJYcVpkUHFXQkttN1N2OEdlUzM3cEFGNTZLc2xHemhEK2dnPT0tLVZCYUFybVc4WnlRbzNhbHN4Y29ORUE9PQ%3D%3D--76752248e1fb7879611aa16ec10291fbad702ab7' \
+  -H 'dnt: 1' \
+  -H 'origin: https://www.gradescope.com' \
+  -H 'pragma: no-cache' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://www.gradescope.com/courses/1239298/questions/71735956/submissions/3993881447/grade' \
+  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Linux"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sec-gpc: 1' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
+  -H 'x-csrf-token: Db8UEUVIluk/lO2WR4bkfGRwRVVa+C8W+PElQrMhIJlMkYWSLGFHE/2xjDJuVnjuEyGN1ts6dZan1+2dy0Qklg==' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  --data-raw '{"rubric_items":{"277863119":{"score":"true"}},"question_submission_evaluation":{"points":null,"comments":"no implemenation"}}'
+#+END_SRC
+
+
+* Dev Notes from Circa <2026-05-13 Wed>
+- Using Firefox dev tools to examine behavior in the grading UI
+- Trying to understand the Next/Previous submission behavior but it's
+  a bit weird
+  - There is a DELETE request that goes to
+    .../SUBMISSSION#/graders/5561970; this goes to Grdaescope
+  - There are some click logs in a POST that might convey the intent;
+    this goes to https://esp.aptrinsic.com
+  - Then a GET that brings in the next submission
+- BINGO: embedded in the HTML are strings like
+  - next_question
+  - previous_submission
+  - next_submission
+  And each to these are a field / value pair though there is some
+  bizarre quoting going on with it
+- The above fields are in 
+  : <div data-react-class"SubmissionGrader" data-react-props="..." >
+  which is a giant garbled mess of embedded quotes BUT it is just
+  comman separated values
+- See file:react.html for a detailed parsing
+
+- The actual changes to the score are done via the ~save_grade~ POST
+  script; it gets a JSON file with the rubric items that should be
+  checked (passed a "true" or "false" value for the on/off);
+  unfortunately these are identified by ID numbers so scripting it
+  would be a littel tricky
+- There is another field for the adjustment which is handy and easy to
+  change
+- Can eliminate the rubric item and it does not need to appear in the
+  JSON that is sent then
+- Leads to JSON that looks like this: 
+  : {"rubric_items":{},"question_submission_evaluation":{"points":"33","comments":null}}
+- Also important on eliminating rubric items to set the scoring scheme
+  to Positive, otherwise Gradecope gets confused
+- Experimenting with the following CURL to make this work
+  #+BEGIN_SRC sh
+curl 'https://www.gradescope.com/courses/1239298/questions/70136765/submissions/3921762816/save_grade' \
+  --compressed \
+  -X POST \
+  -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0' \
+  -H 'Accept: application/json, text/javascript, */*; q=0.01' \
+  -H 'Accept-Language: en-US,en;q=0.9' \
+  -H 'Accept-Encoding: gzip, deflate, br, zstd' \
+  -H 'Referer: https://www.gradescope.com/courses/1239298/questions/70136765/submissions/3921762816/grade' \
+  -H 'X-CSRF-Token: 1QcFU7VmDmXP44bo7HuqFWHMIF6d9C+285zdsaIFc3Q2U1f16cft7AujsyrJzvXB+r3sEWYgkRwxHkxUHe3ijA==' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Requested-With: XMLHttpRequest' \
+  -H 'Origin: https://www.gradescope.com' \
+  -H 'Connection: keep-alive' \
+  -H 'Cookie: _ga=GA1.2.564817065.1749352691; remember_me=ekZXNWMraC9sOXJTQ0wvWHdpQ2dlUT09LS1CdU9PME5jamRiVzU5a3pYRnlURWx3PT0%3D--d7d4a72afd9696febaac037e0375aaaa85f7dc7b; _gradescope_session=TWlDYUV4ckFQeWlhUDRYdDNGTTRqNkxncEV3L0xEanNYQ2xSeVZnS05UbGNyckRyTExDNnEwVmptK1l6ekpmckpWVG5nakdvRFRva0FsOFlPbkNQbmxhNHY0UnY4RFpweEM5eXkyeVNKTzBaT1FPRE1uTVprRGx6U252aG05Wm9QR1ppcEd4NEY4dXVRcVhnYW9mUk1yRG9Oc2RrMTNkanUyRVpMcEExbURqYW1hNFIvempIUW13Y2VSSE1GQ2dpTW5FdW9Md3hXUXRGVVhHY2RrVTZMNWx4cEg4U1k2RFdKZW5hYkNmZWFjbUd2cGRlU0p3d09sT3dZckhhRXVMOU5YMURNajBYY1lkWjJ2WXYyMGJjZXhqaVZtdlp1dnZmc3RQbkl2UWNrcUpINnArVEdFeHZDRGQyZlZJSDZJR0xSOEdya1dBOUxzbUg4MnJ1MjB0YTVib3hzRHM0amtxRGZrQjU4TGNzRWtZeGpZaU4wTk16NktpcEVnRXliUUIyN3JOS1JaS3JLTWQzUnIvVTY4NkJHYm1DblJQTzZCTzJlTGxHYkxscWtsT2VrT0tXdDVuRnliSGNPNFJzSlNDWEc3M1dodHpuT3dTV2xXVC9ISmM0Z0lrS0lVSloxVks4RkRBMTY3WVpOaW9xUkVwY2RNQytFazZXRWpRU1hNSE4yMEFjeklhWGF4cVoxWkZzdUxXZE9BPT0tLUhiUnJUblBnVU94VTgvR0I4eTZ0QWc9PQ%3D%3D--d114a567930adde2a9336b819dfdbd05b0fc0dfb; _gid=GA1.2.392109049.1778700539; signed_token=S1J5bnJEVWc4dFhJMlh0YnVIUzdPSGRTeHpXZys3cGJSclE0UUhqMG5Mbz0tLUl5TXlSUHBqWGxiR1djbVphTzlxNVE9PQ%3D%3D--ec7b9120a811c98aabd1516cd235d81609d6b88c; apt.uid=AP-1BQVLBSZC216-2-1778703058217-27447363.0.2.5b370ea1-e511-4b00-a943-15ae65859f86; apt.sid=AP-1BQVLBSZC216-2-1778703058217-44276845' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-origin' \
+  -H 'Pragma: no-cache' \
+  -H 'Cache-Control: no-cache' \
+  -H 'TE: trailers' \
+  --data-raw '{"rubric_items":{},"question_submission_evaluation":{"points":"+30.0","comments":null}}'
+  #+END_SRC
+- Which works just fine
+- Also tested a minimal curl which is:
+  #+BEGIN_SRC sh
+  ....
+  --data-raw '{"question_submission_evaluation":{"points":"+29.0"}}'
+  #+END_SRC
+  which also works
+- Final version of the minimal curl script is
+  #+BEGIN_SRC sh
+#!/bin/bash
+
+  # --compressed \
+  # -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0' \
+  # --data-raw '{"rubric_items":{},"question_submission_evaluation":{"points":"+30.0","comments":null}}'
+  # -H 'Accept-Encoding: gzip, deflate, br, zstd' \
+      # , */*; q=0.01'
+  # -H 'Accept-Language: en-US,en;q=0.9' \
+  # -H 'Accept: application/json, text/javascript' \
+# save_grade
+
+x=$(
+curl 'https://www.gradescope.com/courses/1239298/questions/70136765/submissions/3921762816' \
+  -X POST \
+  -H 'User-Agent: python-requests/2.33.1' \
+  -H 'X-CSRF-Token: 1QcFU7VmDmXP44bo7HuqFWHMIF6d9C+285zdsaIFc3Q2U1f16cft7AujsyrJzvXB+r3sEWYgkRwxHkxUHe3ijA==' \
+  -H 'Content-Type: application/json' \
+  -H 'Cookie: _ga=GA1.2.564817065.1749352691; remember_me=ekZXNWMraC9sOXJTQ0wvWHdpQ2dlUT09LS1CdU9PME5jamRiVzU5a3pYRnlURWx3PT0%3D--d7d4a72afd9696febaac037e0375aaaa85f7dc7b; _gradescope_session=TWlDYUV4ckFQeWlhUDRYdDNGTTRqNkxncEV3L0xEanNYQ2xSeVZnS05UbGNyckRyTExDNnEwVmptK1l6ekpmckpWVG5nakdvRFRva0FsOFlPbkNQbmxhNHY0UnY4RFpweEM5eXkyeVNKTzBaT1FPRE1uTVprRGx6U252aG05Wm9QR1ppcEd4NEY4dXVRcVhnYW9mUk1yRG9Oc2RrMTNkanUyRVpMcEExbURqYW1hNFIvempIUW13Y2VSSE1GQ2dpTW5FdW9Md3hXUXRGVVhHY2RrVTZMNWx4cEg4U1k2RFdKZW5hYkNmZWFjbUd2cGRlU0p3d09sT3dZckhhRXVMOU5YMURNajBYY1lkWjJ2WXYyMGJjZXhqaVZtdlp1dnZmc3RQbkl2UWNrcUpINnArVEdFeHZDRGQyZlZJSDZJR0xSOEdya1dBOUxzbUg4MnJ1MjB0YTVib3hzRHM0amtxRGZrQjU4TGNzRWtZeGpZaU4wTk16NktpcEVnRXliUUIyN3JOS1JaS3JLTWQzUnIvVTY4NkJHYm1DblJQTzZCTzJlTGxHYkxscWtsT2VrT0tXdDVuRnliSGNPNFJzSlNDWEc3M1dodHpuT3dTV2xXVC9ISmM0Z0lrS0lVSloxVks4RkRBMTY3WVpOaW9xUkVwY2RNQytFazZXRWpRU1hNSE4yMEFjeklhWGF4cVoxWkZzdUxXZE9BPT0tLUhiUnJUblBnVU94VTgvR0I4eTZ0QWc9PQ%3D%3D--d114a567930adde2a9336b819dfdbd05b0fc0dfb; _gid=GA1.2.392109049.1778700539; signed_token=S1J5bnJEVWc4dFhJMlh0YnVIUzdPSGRTeHpXZys3cGJSclE0UUhqMG5Mbz0tLUl5TXlSUHBqWGxiR1djbVphTzlxNVE9PQ%3D%3D--ec7b9120a811c98aabd1516cd235d81609d6b88c; apt.uid=AP-1BQVLBSZC216-2-1778703058217-27447363.0.2.5b370ea1-e511-4b00-a943-15ae65859f86; apt.sid=AP-1BQVLBSZC216-2-1778703058217-44276845' \
+  --data-raw '{"question_submission_evaluation":{"points":"+30.0"}}'
+ )
+echo $x
+echo
+
+# x=$(
+# curl 'https://www.gradescope.com/courses/1239298/questions/70136765/submissions/3921762816/save_grade' \
+#   -X POST \
+#   -H 'User-Agent: python-requests/2.33.1' \
+#   -H 'Accept: application/json, text/javascript' \
+#   -H 'X-CSRF-Token: 1QcFU7VmDmXP44bo7HuqFWHMIF6d9C+285zdsaIFc3Q2U1f16cft7AujsyrJzvXB+r3sEWYgkRwxHkxUHe3ijA==' \
+#   -H 'Content-Type: application/json' \
+#   -H 'Cookie: _ga=GA1.2.564817065.1749352691; remember_me=ekZXNWMraC9sOXJTQ0wvWHdpQ2dlUT09LS1CdU9PME5jamRiVzU5a3pYRnlURWx3PT0%3D--d7d4a72afd9696febaac037e0375aaaa85f7dc7b; _gradescope_session=TWlDYUV4ckFQeWlhUDRYdDNGTTRqNkxncEV3L0xEanNYQ2xSeVZnS05UbGNyckRyTExDNnEwVmptK1l6ekpmckpWVG5nakdvRFRva0FsOFlPbkNQbmxhNHY0UnY4RFpweEM5eXkyeVNKTzBaT1FPRE1uTVprRGx6U252aG05Wm9QR1ppcEd4NEY4dXVRcVhnYW9mUk1yRG9Oc2RrMTNkanUyRVpMcEExbURqYW1hNFIvempIUW13Y2VSSE1GQ2dpTW5FdW9Md3hXUXRGVVhHY2RrVTZMNWx4cEg4U1k2RFdKZW5hYkNmZWFjbUd2cGRlU0p3d09sT3dZckhhRXVMOU5YMURNajBYY1lkWjJ2WXYyMGJjZXhqaVZtdlp1dnZmc3RQbkl2UWNrcUpINnArVEdFeHZDRGQyZlZJSDZJR0xSOEdya1dBOUxzbUg4MnJ1MjB0YTVib3hzRHM0amtxRGZrQjU4TGNzRWtZeGpZaU4wTk16NktpcEVnRXliUUIyN3JOS1JaS3JLTWQzUnIvVTY4NkJHYm1DblJQTzZCTzJlTGxHYkxscWtsT2VrT0tXdDVuRnliSGNPNFJzSlNDWEc3M1dodHpuT3dTV2xXVC9ISmM0Z0lrS0lVSloxVks4RkRBMTY3WVpOaW9xUkVwY2RNQytFazZXRWpRU1hNSE4yMEFjeklhWGF4cVoxWkZzdUxXZE9BPT0tLUhiUnJUblBnVU94VTgvR0I4eTZ0QWc9PQ%3D%3D--d114a567930adde2a9336b819dfdbd05b0fc0dfb; _gid=GA1.2.392109049.1778700539; signed_token=S1J5bnJEVWc4dFhJMlh0YnVIUzdPSGRTeHpXZys3cGJSclE0UUhqMG5Mbz0tLUl5TXlSUHBqWGxiR1djbVphTzlxNVE9PQ%3D%3D--ec7b9120a811c98aabd1516cd235d81609d6b88c; apt.uid=AP-1BQVLBSZC216-2-1778703058217-27447363.0.2.5b370ea1-e511-4b00-a943-15ae65859f86; apt.sid=AP-1BQVLBSZC216-2-1778703058217-44276845' \
+#   --data-raw '{"question_submission_evaluation":{"points":"+30.0"}}'
+#  )
+# echo $x
+# echo
+  #+END_SRC
+- Structure of URL is
+  - COURSE ID
+  - QUESTION ID (Not the assignment ID - wild!)
+  - QUESTION SUBMISSION ID (not assignment submission ID)
+- General steps will be 
+  1. Log in, likely using same credential scheme as in
+     gradescope-submit
+  2. Identify the question number, can be done through the URLs
+     manually then inserted into a data file of some kind
+  3. Draw in data from a spreadsheet or text file; ideally this is the
+     spreadsheet downloaded from Gradescope via "Export Evaluations"
+     as it has the submission numbers in it; that will spare the need
+     to iterate / go to "next" and simplify the parsing of HTML lot
+- Would lead to a invocation like
+  #+BEGIN_SRC sh
+>> gradescope-score QUESTION_ID scores.csv
+==Gradscope Login Credentials==
+email: profk@umd.edu
+password: .........
+...
+  #+END_SRC
+- On second thought, it's better just to shuffle the QUESTION into the
+  data file so 
+  #+BEGIN_SRC sh
+>> gradescope-score scores.csv
+  #+END_SRC
+
+- Am geting bugs as 
+  : https://www.gradescope.com/courses/1239298/questions/70136765/submissions/3921762816/save_grade Unprocessable Entity (422)
+  422 error
+- Also the python CSV parser is not cooperating, ignoring a scores
+  column in the default mode: UPDATE, was a bug in my CSV file where
+  there were multiple "Score" columns, good to know the DictReader in
+  python silently misbehaves in that case
+- Requires a token in the header to work
+  #+BEGIN_SRC text
+"name": "X-CSRF-Token",
+"value": "lzCQq+yDk3+RyMQ81LAtlRCqoHnKpHcijyjsHo45alF0ZMINsCJw9lWI8f7xBXJBi9tsNjFwyYhNqn37MdH7qQ=="
+  #+END_SRC
+- This is in the <meta> tags of the HTML page and is referred to as an
+  authenticity_token of a page like
+  https://www.gradescope.com/courses/1239298/questions/70136765/submissions/3927151261/grade
+  #+BEGIN_SRC html
+<meta name="csrf-param" content="authenticity_token">
+<meta name="csrf-token" content="lzCQq+yDk3+RyMQ81LAtlRCqoHnKpHcijyjsHo45alF0ZMINsCJw9lWI8f7xBXJBi9tsNjFwyYhNqn37MdH7qQ==">
+  #+END_SRC
+- after experimenting, found that the same token can't be used/cached
+  on the first fetch, not valid for connections to late scoring
+- likely need a GET to fetch the page for an individual answer then
+  grab out the token to add it to the header before updating the score
+- Visit the submissions listing to get the token first
+  https://www.gradescope.com/courses/1239298/questions/70136765/submissions/
+  and parse out the authentication token as was done in the submit
+  script
+- This worked well, just get a token on each submission, slighly
+  longer time to do so but still favorable compared to manual work
+- Finalizing the script with this technique 
+- <2026-05-15 Fri> Tested and worked well, updated scores for CMSC216
+  P5 performance with no trouble and have documented the process of
+  creating the CSV file for upload
+
+
